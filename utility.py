@@ -204,6 +204,7 @@ def build_trdc(trdc_device):
 
 def update_trdc(trdc_device, trdc_model, trdc_optimizer, dataset_loader):
     trdc_model.train()
+    trdc_model.context_encoder.eval()
 
     for dataset_batch in dataset_loader:
         with torch.no_grad():
@@ -262,10 +263,18 @@ def assess_trdc(trdc_device, trdc_model, dataset_loader):
             false_positives.append(torch.sum(selection_arrays).tolist() - true_positives[-1])
             false_negatives.append(torch.sum(label_arrays).tolist() - true_positives[-1])
 
-    overall_precision = sum(true_positives) / (sum(true_positives) + sum(false_positives))
-    overall_recall = sum(true_positives) / (sum(true_positives) + sum(false_negatives))
-    overall_f1 = 2.0 * overall_precision * overall_recall / (overall_precision + overall_recall)
+    true_positive = sum(true_positives)
+    false_positive = sum(false_positives)
+    false_negative = sum(false_negatives)
 
-    print("overall f1: {}".format(overall_f1))
+    if true_positive == 0:
+        f1_score = 0.0
 
-    return overall_f1
+    else:
+        precision_score = true_positive / (true_positive + false_positive)
+        recall_score = true_positive / (true_positive + false_negative)
+        f1_score = 2.0 * precision_score * recall_score / (precision_score + recall_score)
+
+    print("f1 score: {}".format(f1_score))
+
+    return f1_score

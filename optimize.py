@@ -41,9 +41,9 @@ while True:
     trdc_model = trdc_model.module
 
     if torch.distributed.get_rank() == 0:
-        overall_f1 = assess_trdc(trdc_device, trdc_model, develop_loader)
+        f1_score = assess_trdc(trdc_device, trdc_model, develop_loader)
 
-        if trdc_scheduler.is_better(overall_f1, trdc_scheduler.best):
+        if trdc_scheduler.is_better(f1_score, trdc_scheduler.best):
             trdc_result = True
             model_checkpoint["model"] = trdc_model.state_dict()
 
@@ -52,7 +52,7 @@ while True:
             model_checkpoint["round"] += 1
             trdc_optimizer.load_state_dict(model_checkpoint["optimizer"])
 
-        trdc_scheduler.step(overall_f1)
+        trdc_scheduler.step(f1_score)
         model_checkpoint["optimizer"] = trdc_optimizer.state_dict()
         model_checkpoint["scheduler"] = trdc_scheduler.state_dict()
         torch.save(model_checkpoint, model_checkpoint_path)
