@@ -13,14 +13,12 @@ develop_dataset_path = os.path.join(os.path.dirname(os.path.realpath(__file__)),
 test_dataset_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "dataset", "test_dataset")
 model_checkpoint_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "checkpoint", "model_checkpoint")
 posture_vocabulary_maximum_size = 10
-per_device_batch_size = 128
+per_device_batch_size = 8
 per_device_worker_count = 2
 token_array_maximum_size = 512
 posture_probability_threshold_value = 0.5
-learning_rate_initial_value = 0.00005
+learning_rate_initial_value = 0.00003
 learning_rate_decay_rate = 0.5
-adamw_optimizer_epsilon_value = 0.000001
-adamw_optimizer_weight_decay = 0.01
 early_stopping_round_limit = 3
 weight_decay_skip_terms = ["bias", "norm"]
 
@@ -155,37 +153,10 @@ def build_trdc(trdc_device):
     posture_vocabulary = load_file(posture_vocabulary_path, "text")
     model_config = transformers.AutoConfig.from_pretrained(transformers_path)
     context_encoder = transformers.AutoModel.from_pretrained(transformers_path)
-
-    for parameter in context_encoder.parameters():
-        parameter.requires_grad = False
-
     posture_predictor = torch.nn.Linear(model_config.hidden_size, len(posture_vocabulary))
     trdc_model = TRDCModel(context_encoder, posture_predictor)
     trdc_model.to(trdc_device)
-
-    trdc_optimizer = torch.optim.AdamW(
-        [
-            {
-                "params": list(
-                    parameter
-                    for name, parameter in trdc_model.named_parameters()
-                    if all(term not in name.lower() for term in weight_decay_skip_terms)
-                )
-            },
-            {
-                "params": list(
-                    parameter
-                    for name, parameter in trdc_model.named_parameters()
-                    if any(term in name.lower() for term in weight_decay_skip_terms)
-                ),
-                "weight_decay": 0.0
-            }
-        ],
-        learning_rate_initial_value,
-        eps=adamw_optimizer_epsilon_value,
-        weight_decay=adamw_optimizer_weight_decay
-    )
-
+    trdc_optimizer = torch.optim.AdamW(trdc_model.parameters(), learning_rate_initial_value)
     trdc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(trdc_optimizer, "max", learning_rate_decay_rate, 0)
 
     return trdc_model, trdc_optimizer, trdc_scheduler
@@ -215,6 +186,7 @@ def update_trdc(trdc_device, trdc_model, trdc_optimizer, dataset_loader):
         loss_value = loss_criterion(prediction_arrays, label_arrays.float())
         trdc_optimizer.zero_grad()
         loss_value.backward()
+        torch.nn.utils.clip_grad_norm_(trdc_model.parameters(), 1.0)
         trdc_optimizer.step()
 
 
