@@ -12,6 +12,7 @@ train_dataset_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "
 develop_dataset_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "dataset", "develop_dataset")
 test_dataset_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "dataset", "test_dataset")
 model_checkpoint_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "checkpoint", "model_checkpoint")
+posture_vocabulary_maximum_size = 10
 per_device_batch_size = 128
 per_device_worker_count = 2
 token_array_maximum_size = 512
