@@ -158,9 +158,8 @@ def build_trdc(trdc_device):
     for parameter in context_encoder.parameters():
         parameter.requires_grad = False
 
-    weight_calculator = torch.nn.Linear(model_config.hidden_size, 1)
     posture_predictor = torch.nn.Linear(model_config.hidden_size, len(posture_vocabulary))
-    trdc_model = TRDCModel(context_encoder, weight_calculator, posture_predictor)
+    trdc_model = TRDCModel(context_encoder, posture_predictor)
     trdc_model.to(trdc_device)
 
     trdc_optimizer = torch.optim.AdamW(
