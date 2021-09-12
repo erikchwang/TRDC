@@ -26,8 +26,15 @@ if argument_parser.parse_args().step_index == 0:
                 else:
                     posture_frequency[posture] = 1
 
-    posture_vocabulary = sorted(posture_frequency, key=posture_frequency.get, reverse=True)
+    posture_vocabulary = []
+    posture_weight = []
+
+    for posture in sorted(posture_frequency, key=posture_frequency.get, reverse=True):
+        posture_vocabulary.append(posture)
+        posture_weight.append((document_count - posture_frequency[posture]) / posture_frequency[posture])
+
     dump_file(posture_vocabulary, posture_vocabulary_path, "text")
+    dump_file(posture_weight, posture_weight_path, "pickle")
 
     print(
         "document count: {}, posture count: {} (distinct: {}), paragraph count: {}".format(

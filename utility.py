@@ -7,14 +7,14 @@ warnings.filterwarnings("ignore")
 transformers_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "transformers")
 task_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "task")
 posture_vocabulary_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "dataset", "posture_vocabulary")
+posture_weight_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "dataset", "posture_weight")
 train_dataset_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "dataset", "train_dataset")
 develop_dataset_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "dataset", "develop_dataset")
 test_dataset_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "dataset", "test_dataset")
 model_checkpoint_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "checkpoint", "model_checkpoint")
-per_device_batch_size = 32
+per_device_batch_size = 64
 per_device_worker_count = 2
 token_array_maximum_size = 512
-focal_loss_focusing_parameter = 2.0
 posture_probability_threshold_value = 0.5
 learning_rate_initial_value = 0.00005
 learning_rate_decay_rate = 0.5
@@ -207,6 +207,16 @@ def build_trdc(trdc_device):
 
 
 def update_trdc(trdc_device, trdc_model, trdc_optimizer, dataset_loader):
+    posture_weight = load_file(posture_weight_path, "pickle")
+
+    loss_criterion = torch.nn.BCEWithLogitsLoss(
+        pos_weight=torch.tensor(
+            posture_weight,
+            dtype=torch.float,
+            device=trdc_device
+        )
+    )
+
     trdc_model.train()
 
     for dataset_batch in dataset_loader:
@@ -217,26 +227,7 @@ def update_trdc(trdc_device, trdc_model, trdc_optimizer, dataset_loader):
         token_counts = dataset_batch.token_counts
         label_arrays = dataset_batch.label_arrays
         prediction_arrays = trdc_model(token_arrays, token_counts)
-        probability_arrays = torch.nn.functional.sigmoid(prediction_arrays)
-
-        correctness_arrays = torch.mul(
-            torch.pow(probability_arrays, label_arrays.float()),
-            torch.pow(
-                torch.sub(torch.tensor(1, dtype=torch.float, device=probability_arrays.device), probability_arrays),
-                torch.sub(torch.tensor(1, dtype=torch.float, device=label_arrays.device), label_arrays.float())
-            )
-        )
-
-        loss_value = torch.mean(
-            torch.mul(
-                torch.neg(torch.log(correctness_arrays)),
-                torch.pow(
-                    torch.sub(torch.tensor(1, dtype=torch.float, device=correctness_arrays.device), correctness_arrays),
-                    torch.tensor(focal_loss_focusing_parameter, dtype=torch.float, device=correctness_arrays.device)
-                )
-            )
-        )
-
+        loss_value = loss_criterion(prediction_arrays, label_arrays.float())
         trdc_optimizer.zero_grad()
         loss_value.backward()
         trdc_optimizer.step()
@@ -255,11 +246,10 @@ def assess_trdc(trdc_device, trdc_model, dataset_loader):
             token_counts = dataset_batch.token_counts
             label_arrays = dataset_batch.label_arrays
             prediction_arrays = trdc_model(token_arrays, token_counts)
-            probability_arrays = torch.nn.functional.sigmoid(prediction_arrays)
 
             selection_arrays = torch.gt(
-                probability_arrays,
-                torch.tensor(posture_probability_threshold_value, dtype=torch.float, device=probability_arrays.device)
+                torch.nn.functional.sigmoid(prediction_arrays),
+                torch.tensor(posture_probability_threshold_value, dtype=torch.float, device=prediction_arrays.device)
             ).long()
 
             true_positives.append(torch.sum(torch.mul(label_arrays, selection_arrays)).tolist())
