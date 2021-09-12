@@ -12,7 +12,7 @@ train_dataset_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "
 develop_dataset_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "dataset", "develop_dataset")
 test_dataset_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "dataset", "test_dataset")
 model_checkpoint_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "checkpoint", "model_checkpoint")
-per_device_batch_size = 64
+per_device_batch_size = 128
 per_device_worker_count = 2
 token_array_maximum_size = 512
 posture_probability_threshold_value = 0.5
@@ -108,10 +108,9 @@ class DatasetBatch:
 
 
 class TRDCModel(torch.nn.Module):
-    def __init__(self, context_encoder, weight_calculator, posture_predictor):
+    def __init__(self, context_encoder, posture_predictor):
         super().__init__()
         self.context_encoder = context_encoder
-        self.weight_calculator = weight_calculator
         self.posture_predictor = posture_predictor
 
     def forward(self, token_arrays, token_counts):
@@ -123,32 +122,18 @@ class TRDCModel(torch.nn.Module):
             ).float()
         )[0]
 
+        weight_arrays = torch.masked_fill(
+            torch.ones(token_arrays.size(), dtype=torch.float, device=token_arrays.device),
+            torch.ge(
+                torch.unsqueeze(torch.arange(token_arrays.size()[1], dtype=torch.long, device=token_arrays.device), 0),
+                torch.unsqueeze(token_counts, 1)
+            ),
+            torch.tensor(0.0, dtype=torch.float, device=token_arrays.device)
+        )
+
         prediction_arrays = self.posture_predictor(
             torch.sum(
-                torch.mul(
-                    code_arrays,
-                    torch.nn.functional.softmax(
-                        torch.masked_fill(
-                            self.weight_calculator(code_arrays),
-                            torch.unsqueeze(
-                                torch.ge(
-                                    torch.unsqueeze(
-                                        torch.arange(
-                                            code_arrays.size()[1],
-                                            dtype=torch.long,
-                                            device=code_arrays.device
-                                        ),
-                                        0
-                                    ),
-                                    torch.unsqueeze(token_counts, 1)
-                                ),
-                                2
-                            ),
-                            torch.tensor(float("-inf"), dtype=torch.float, device=code_arrays.device)
-                        ),
-                        1
-                    )
-                ),
+                torch.mul(code_arrays, torch.unsqueeze(torch.div(weight_arrays, torch.sum(weight_arrays, 1, True)), 2)),
                 1
             )
         )
