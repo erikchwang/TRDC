@@ -1,0 +1,25 @@
+Question 1
+
+number of documents: 20020
+number of postures: 30808
+number of distinct postures: 230
+number of paragraphs: 601424
+
+1) Each document is labeled with one or multiple postures, so this is a multi-label text classification task.
+2) The postures are not balanced. The most frequent posture is "On Appeal", which occurs 10273 times in 20020 documents, while the most infrequent postures, such as "Declinatory Exception of Improper Venue", only occur once.
+3) Each document includes multiple sections, and each section consists of multiple paragraphs. The first section seems closely related to the postures, so I believe that the postures can be predicted even if only the first section is used.
+
+Question 2
+
+1) Since a whole document is too long, and considering the above analysis, I only use the first section of each document to predict postures. If the first section consists of multiple paragraphs, I simply concatenate these paragraphs together.
+2) On this basis, I use a pretrained BERT to tokenize and encode the first section of each document. Due to the length limit on the input of BERT, I only pass the first 512 tokens in the tokenization result to BERT for encoding.
+3) To predict postures, I calculate the average value of the resulting BERT representations, and thereby pass the average representation to a dense layer with a sigmoid activation to calculate the probability of each posture.
+4) The loss between the probability of each posture and the corresponding ground-truth label is defined as a binary cross-entropy loss, and the total loss for a mini batch is obtained by averaging all the losses.
+5) I use AdamW as the optimizer to train the model, and use F1 score as the evaluation metrics. The data has been split into a training set (80%), a validation set (10%), and a test set (10%).
+6) The performance is very poor. The F1 score always diverges to 0 on both the training set and the validation set. I also tried to only consider the top-10 frequent postures, but it still does not work. Therefore, it seems that the above method is not feasible. However, it is also possible that there are some bugs in my code.
+
+Question 3
+
+1) Only using the first section of each document seems not enough for the posture prediction task, while a whole document is too long to deal with. A possible solution to this issue is to apply Graph Neural Networks (GNNs). Specifically, a paragraph graph can be constructed according to the entity sharing or topic referencing relations between paragraphs. In this way, each paragraph can be separately processed, and messages can be passed on the constructed graph so that information can be exchanged between paragraphs. A potential challenge for this method is to perform entity recognition, entity linking, and topic extraction.
+2) Since the postures are highly unbalanced, there are much less training examples for the infrequent postures than for the frequent postures. A possible solution to this issue is to augment the training examples for the infrequent postures through a translation-based paraphrasing process. Specifically, documents containing infrequent postures can be translated to other languages and then translated back to English so that there will be more documents containing infrequent postures. A potential challenge for this method is to improve both the quality and diversity of translation results.
+3) Based on the above data augmentation method, this multi-label text classification task can be converted to multiple single-label text classification tasks. Specifically, a separate model can be constructed and trained for predicting each posture, and applying all these single-posture models together to each document can lead to a comprehensive prediction. A potential challenge for this issue is the complexity.
