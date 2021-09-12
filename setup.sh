@@ -12,9 +12,9 @@ pip install conda-pack==0.5.0 transformers==3.1.0
 
 python -c "
 import transformers;
-transformers.AutoConfig.from_pretrained('bert-base-cased').save_pretrained('${ROOT}/transformers');
-transformers.AutoTokenizer.from_pretrained('bert-base-cased').save_pretrained('${ROOT}/transformers');
-transformers.AutoModel.from_pretrained('bert-base-cased').save_pretrained('${ROOT}/transformers')
+transformers.AutoConfig.from_pretrained('nlpaueb/legal-bert-base-uncased').save_pretrained('${ROOT}/transformers');
+transformers.AutoTokenizer.from_pretrained('nlpaueb/legal-bert-base-uncased').save_pretrained('${ROOT}/transformers');
+transformers.AutoModel.from_pretrained('nlpaueb/legal-bert-base-uncased').save_pretrained('${ROOT}/transformers')
 "
 
 unzip -j ${ROOT}/TRDCdata.zip -d ${ROOT}/task

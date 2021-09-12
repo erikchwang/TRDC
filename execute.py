@@ -10,7 +10,7 @@ test_loader = torch.utils.data.DataLoader(
     test_dataset,
     per_device_batch_size,
     num_workers=per_device_worker_count,
-    collate_fn=DatasetBatch.load_batch,
+    collate_fn=DatasetBatch.load_dataset,
     pin_memory=True
 )
 

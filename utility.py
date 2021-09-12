@@ -7,20 +7,17 @@ warnings.filterwarnings("ignore")
 transformers_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "transformers")
 task_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "task")
 posture_vocabulary_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "dataset", "posture_vocabulary")
-posture_weight_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "dataset", "posture_weight")
 train_dataset_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "dataset", "train_dataset")
 develop_dataset_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "dataset", "develop_dataset")
 test_dataset_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "dataset", "test_dataset")
 model_checkpoint_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "checkpoint", "model_checkpoint")
-posture_vocabulary_maximum_size = 10
+token_array_maximum_size = 512
+learning_rate_initial_value = 0.00001
+learning_rate_decay_rate = 0.5
+posture_probability_threshold_value = 0.5
 per_device_batch_size = 8
 per_device_worker_count = 2
-token_array_maximum_size = 512
-posture_probability_threshold_value = 0.5
-learning_rate_initial_value = 0.00003
-learning_rate_decay_rate = 0.5
 early_stopping_round_limit = 3
-weight_decay_skip_terms = ["bias", "norm"]
 
 
 def load_file(file_path, file_type):
@@ -53,9 +50,10 @@ def convert_dataset(dataset_document, wordpiece_tokenizer, posture_vocabulary):
     parsed_document = json.loads(dataset_document)
 
     token_array = wordpiece_tokenizer.encode(
-        " ".join(parsed_document["sections"][0]["paragraphs"]),
-        add_special_tokens=False
-    )[:token_array_maximum_size]
+        parsed_document["sections"][0]["paragraphs"][0],
+        truncation=True,
+        max_length=token_array_maximum_size
+    )
 
     label_array = list(1 if posture in parsed_document["postures"] else 0 for posture in posture_vocabulary)
     dataset_example = {"token_array": token_array, "label_array": label_array}
@@ -70,8 +68,8 @@ class DatasetBatch:
         self.label_arrays = label_arrays
 
     @classmethod
-    def load_batch(cls, batch_examples):
-        token_counts = list(len(example["token_array"]) for example in batch_examples)
+    def load_dataset(cls, dataset_examples):
+        token_counts = list(len(example["token_array"]) for example in dataset_examples)
         maximum_count = max(token_counts)
 
         token_arrays = torch.stack(
@@ -82,12 +80,12 @@ class DatasetBatch:
                         torch.zeros([maximum_count - count], dtype=torch.long)
                     ]
                 )
-                for example, count in zip(batch_examples, token_counts)
+                for example, count in zip(dataset_examples, token_counts)
             )
         )
 
         token_counts = torch.tensor(token_counts, dtype=torch.long)
-        label_arrays = torch.tensor(list(example["label_array"] for example in batch_examples), dtype=torch.long)
+        label_arrays = torch.tensor(list(example["label_array"] for example in dataset_examples), dtype=torch.long)
 
         return cls(token_arrays, token_counts, label_arrays)
 
@@ -113,28 +111,18 @@ class TRDCModel(torch.nn.Module):
         self.posture_predictor = posture_predictor
 
     def forward(self, token_arrays, token_counts):
-        code_arrays = self.context_encoder(
-            token_arrays,
-            torch.lt(
-                torch.unsqueeze(torch.arange(token_arrays.size()[1], dtype=torch.long, device=token_arrays.device), 0),
-                torch.unsqueeze(token_counts, 1)
-            ).float()
-        )[0]
-
-        weight_arrays = torch.masked_fill(
-            torch.ones(token_arrays.size(), dtype=torch.float, device=token_arrays.device),
-            torch.ge(
-                torch.unsqueeze(torch.arange(token_arrays.size()[1], dtype=torch.long, device=token_arrays.device), 0),
-                torch.unsqueeze(token_counts, 1)
-            ),
-            torch.tensor(0.0, dtype=torch.float, device=token_arrays.device)
-        )
-
         prediction_arrays = self.posture_predictor(
-            torch.sum(
-                torch.mul(code_arrays, torch.unsqueeze(torch.div(weight_arrays, torch.sum(weight_arrays, 1, True)), 2)),
-                1
-            )
+            self.context_encoder(
+                token_arrays,
+                torch.lt(
+                    torch.unsqueeze(
+                        torch.arange(token_arrays.size()[1], dtype=torch.long, device=token_arrays.device),
+                        0
+                    ),
+                    torch.unsqueeze(token_counts, 1)
+                ).float(),
+                return_dict=False
+            )[1]
         )
 
         return prediction_arrays
@@ -152,33 +140,53 @@ class ParallelWrapper(torch.nn.parallel.DistributedDataParallel):
 def build_trdc(trdc_device):
     posture_vocabulary = load_file(posture_vocabulary_path, "text")
     model_config = transformers.AutoConfig.from_pretrained(transformers_path)
+    wordpiece_tokenizer = transformers.AutoTokenizer.from_pretrained(transformers_path)
     context_encoder = transformers.AutoModel.from_pretrained(transformers_path)
     posture_predictor = torch.nn.Linear(model_config.hidden_size, len(posture_vocabulary))
+
+    with torch.no_grad():
+        posture_predictor.weight.copy_(
+            context_encoder(
+                **wordpiece_tokenizer(posture_vocabulary, padding=True, return_tensors="pt"),
+                return_dict=False
+            )[1]
+        )
+
     trdc_model = TRDCModel(context_encoder, posture_predictor)
     trdc_model.to(trdc_device)
-    trdc_optimizer = torch.optim.AdamW(trdc_model.parameters(), learning_rate_initial_value)
+
+    trdc_optimizer = torch.optim.AdamW(
+        [
+            {
+                "params": list(
+                    parameter
+                    for name, parameter in trdc_model.named_parameters()
+                    if all(term not in name.lower() for term in ["bias", "norm"])
+                )
+            },
+            {
+                "params": list(
+                    parameter
+                    for name, parameter in trdc_model.named_parameters()
+                    if any(term in name.lower() for term in ["bias", "norm"])
+                ),
+                "weight_decay": 0.0
+            }
+        ],
+        learning_rate_initial_value
+    )
+
     trdc_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(trdc_optimizer, "max", learning_rate_decay_rate, 0)
 
     return trdc_model, trdc_optimizer, trdc_scheduler
 
 
 def update_trdc(trdc_device, trdc_model, trdc_optimizer, dataset_loader):
-    posture_weight = load_file(posture_weight_path, "pickle")
-
-    loss_criterion = torch.nn.BCEWithLogitsLoss(
-        pos_weight=torch.tensor(
-            posture_weight,
-            dtype=torch.float,
-            device=trdc_device
-        )
-    )
-
+    loss_criterion = torch.nn.BCEWithLogitsLoss()
     trdc_model.train()
 
     for dataset_batch in dataset_loader:
-        with torch.no_grad():
-            dataset_batch.to(trdc_device, non_blocking=True)
-
+        dataset_batch.to(trdc_device, non_blocking=True)
         token_arrays = dataset_batch.token_arrays
         token_counts = dataset_batch.token_counts
         label_arrays = dataset_batch.label_arrays
@@ -186,7 +194,6 @@ def update_trdc(trdc_device, trdc_model, trdc_optimizer, dataset_loader):
         loss_value = loss_criterion(prediction_arrays, label_arrays.float())
         trdc_optimizer.zero_grad()
         loss_value.backward()
-        torch.nn.utils.clip_grad_norm_(trdc_model.parameters(), 1.0)
         trdc_optimizer.step()
 
 

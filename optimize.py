@@ -12,7 +12,7 @@ train_loader = torch.utils.data.DataLoader(
     per_device_batch_size,
     sampler=torch.utils.data.distributed.DistributedSampler(train_dataset),
     num_workers=per_device_worker_count,
-    collate_fn=DatasetBatch.load_batch,
+    collate_fn=DatasetBatch.load_dataset,
     pin_memory=True
 )
 
@@ -20,7 +20,7 @@ develop_loader = torch.utils.data.DataLoader(
     develop_dataset,
     per_device_batch_size,
     num_workers=per_device_worker_count,
-    collate_fn=DatasetBatch.load_batch,
+    collate_fn=DatasetBatch.load_dataset,
     pin_memory=True
 )
 
