@@ -169,6 +169,10 @@ def build_trdc(trdc_device):
     posture_vocabulary = load_file(posture_vocabulary_path, "text")
     model_config = transformers.AutoConfig.from_pretrained(transformers_path)
     context_encoder = transformers.AutoModel.from_pretrained(transformers_path)
+
+    for parameter in context_encoder.parameters():
+        parameter.requires_grad = False
+
     weight_calculator = torch.nn.Linear(model_config.hidden_size, 1)
     posture_predictor = torch.nn.Linear(model_config.hidden_size, len(posture_vocabulary))
     trdc_model = TRDCModel(context_encoder, weight_calculator, posture_predictor)
@@ -204,7 +208,6 @@ def build_trdc(trdc_device):
 
 def update_trdc(trdc_device, trdc_model, trdc_optimizer, dataset_loader):
     trdc_model.train()
-    trdc_model.context_encoder.eval()
 
     for dataset_batch in dataset_loader:
         with torch.no_grad():
