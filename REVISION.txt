@@ -1,0 +1,7 @@
+The previous version of my code did not achieve reasonable performance. Finally, I figured out that there are two reasons for this poor performance, and accordingly revised my code:
+
+1) The posture dataset is about law, while the pretrained BERT ("bert-base-uncased") used in my code is pretrained on general-purpose corpora, which makes it unsuitable for dealing with legal tasks. Therefore, I modified the pretrained BERT to "legal-bert-base-uncased", which is pretrained on legal documents (e.g., legislation, court cases, contracts).
+
+2) The sigmoid prediction layer was not properly initialized. Since this layer is appended to the pretrained BERT for predicting postures, it should be initialized to match the output distribution of the pretrained BERT rather than being initialized randomly. Therefore, I first use the pretrained BERT to generate a representation for each candidate posture, and then use the resulting BERT-based posture representations to initialize the weight of the sigmoid prediction layer.
+
+Based on the above two revisions, my code can achieve an F1 score of 70.77 on the validation set, and an F1 score of 71.29 on the test set.
