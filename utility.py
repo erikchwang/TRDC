@@ -50,7 +50,7 @@ def convert_dataset(dataset_document, wordpiece_tokenizer, posture_vocabulary):
     parsed_document = json.loads(dataset_document)
 
     token_array = wordpiece_tokenizer.encode(
-        parsed_document["sections"][0]["paragraphs"][0],
+        " ".join(itertools.chain.from_iterable(section["paragraphs"] for section in parsed_document["sections"])),
         truncation=True,
         max_length=token_array_maximum_size
     )
@@ -120,8 +120,7 @@ class TRDCModel(torch.nn.Module):
                         0
                     ),
                     torch.unsqueeze(token_counts, 1)
-                ).float(),
-                return_dict=False
+                ).float()
             )[1]
         )
 
@@ -147,8 +146,11 @@ def build_trdc(trdc_device):
     with torch.no_grad():
         posture_predictor.weight.copy_(
             context_encoder(
-                **wordpiece_tokenizer(posture_vocabulary, padding=True, return_tensors="pt"),
-                return_dict=False
+                **wordpiece_tokenizer(
+                    posture_vocabulary,
+                    padding=True,
+                    return_tensors="pt"
+                )
             )[1]
         )
 
